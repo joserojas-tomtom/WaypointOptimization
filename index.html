@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html class='use-all-space'>
+
+<head>
+  <meta http-equiv='X-UA-Compatible' content='IE=Edge' />
+  <meta charset='UTF-8'>
+  <title>Optimizing my route</title>
+  <link rel='stylesheet' type='text/css' href='https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.15.0/maps/maps.css'>
+  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.15.0/maps/maps-web.min.js"></script>
+  <script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.15.0/services/services-web.min.js"></script>
+
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+  <style>
+    .marker-icon {
+      background-position: center;
+      background-size: 50px 50px;
+      border-radius: 50%;
+      height: 50px;
+      left: 4px;
+      position: absolute;
+      text-align: center;
+      top: 3px;
+
+      width: 50px;
+    }
+
+    .marker {
+      height: 60px;
+      width: 60px;
+    }
+
+    .marker-content {
+      background: #c30b82;
+      border-radius: 50% 50% 50% 0;
+      height: 60px;
+      left: 50%;
+      margin: -15px 0 0 -15px;
+      position: absolute;
+      top: 50%;
+      width: 60px;
+    }
+
+    .marker-content::before {
+      background: #ffffff;
+      border-radius: 50%;
+      content: "";
+      height: 50px;
+      margin: 3px 0 0 3px;
+      position: absolute;
+      width: 50px;
+    }
+  </style>
+
+</head>
+
+<body>
+
+  <div style='width:100vw; height: 80vh' id='map' class='map'></div>
+
+  <script>
+
+    var markers = []
+
+    function createMarker(icon, position, color, popupText) {
+      var markerElement = document.createElement('div');
+      markerElement.className = 'marker';
+
+      var markerContentElement = document.createElement('div');
+      markerContentElement.className = 'marker-content';
+      markerContentElement.style.backgroundColor = color;
+      markerElement.appendChild(markerContentElement);
+
+      var iconElement = document.createElement('div');
+      iconElement.className = 'marker-icon';
+      iconElement.style.backgroundImage =
+        'url(' + icon + ')';
+      markerContentElement.appendChild(iconElement);
+
+      var popup = new tt.Popup({ offset: 50 }).setText(popupText)
+      // add marker to map
+      markers.push(new tt.Marker({ element: markerElement, anchor: 'bottom' })
+        .setLngLat(position)
+        .setPopup(popup)
+        .addTo(map))
+    }
+
+    var map
+
+    let waypoints = [
+      { lng: -58.4291585182098, lat: -34.621069575185025 },  // <- We start here
+      { lng: -58.39616319351775, lat: -34.64432584874411 },
+      { lng: -58.3820916579873, lat: -34.649116030727164 },
+      { lng: -58.37032494293145, lat: -34.644525445185074 },
+      { lng: -58.367534897092995, lat: -34.63224937024358 },
+      { lng: -58.37481327753967, lat: -34.61388176866088 },
+      { lng: -58.379058999466935, lat: -34.605295517356446 },
+      { lng: -58.41787702851779, lat: -34.61807473144602 },
+      { lng: -58.427338923098105, lat: -34.64043362210506 },
+      { lng: -58.40368418664637, lat: -34.63474465455527 },
+      { lng: -58.4291585182098, lat: -34.621069575185025 }
+
+    ]
+
+    // Check if we have an API KEY
+    var API_KEY = "YOUR API KEY FROM developer.tomtom.com"
+
+    // we have a center location
+    var centerLocation = waypoints[0]
+
+    map = tt.map({
+      key: API_KEY,
+      container: 'map',
+      center: centerLocation,
+      bearing: 0,
+      maxZoom: 21,
+      minZoom: 1,
+      pitch: 60,
+      zoom: 14,
+    });
+
+    map.on('click', function (event) {
+      console.log(event.lngLat)
+    })
+
+    map.on('load', function () {
+      createMarker('van.jpeg', waypoints[0], 'orange', 'Origin')
+
+      waypoints.forEach(function (location, index) {
+        if (index != 0) {
+          markers.push(
+            new tt.Marker()
+              .setLngLat(location)
+              .addTo(map)
+          )
+        }
+      })
+
+      // lets create the URL for thewaypoint optimization API_KEY
+      let URL = 'https://api.tomtom.com/routing/waypointoptimization/1/best?key=' + API_KEY
+
+      axios.post(URL, {
+        waypoints: waypoints.map(function (element) {
+          return {
+            point: {
+              latitude: element.lat,
+              longitude: element.lng
+            }
+          }
+        })
+      })
+        .then(function (response) {
+          console.log(response)
+
+          let solution = response.data.optimizedOrder
+          let locations = solution.map(function (order, index) {
+            let popup = new tt.Popup({ offset: 50 }).setText("Destination #" + index)
+            markers[order].setPopup(popup)
+            return waypoints[order]
+          })
+          createRoute({
+            key: API_KEY,
+            locations: locations
+          })
+        })
+        .catch(function (error) {
+          console.log(error)
+        })
+
+
+
+      var createRoute = function (options) {
+        tt.services.calculateRoute(options).then(function (response) {
+
+          var features = response.toGeoJson().features
+          console.log(features)
+          features.forEach(function (feature, index) {
+            map.addLayer({
+              'id': 'route' + index,
+              'type': 'line',
+              'source': {
+                'type': 'geojson',
+                'data': feature
+              },
+              'paint': {
+                'line-color': 'blue',
+                'line-opacity': 0.7,
+                'line-width': 10,
+                'line-dasharray': [1, 0, 1, 0]
+              },
+              'layout': {
+                'line-cap': 'round',
+                'line-join': 'round'
+              }
+            })
+          })
+
+        })
+      }
+
+    })
+
+  </script>
+</body>
+
+</html>
